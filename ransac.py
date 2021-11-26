@@ -2,10 +2,14 @@ import numpy as np
 from oct2py import octave
 from utils import *
 
-def ransac(pt1, pt2, K, threshold):
+def ransac(pt1, pt2, K=None, threshold=1.0, desiredConfidence=0.9999):
     # make points homogeneous
-    pt1 = np.concatenate((pt1, np.ones((pt1.shape[0], 1))), axis=1)
-    pt2 = np.concatenate((pt2, np.ones((pt2.shape[0], 1))), axis=1)
+    pt1 = homogeneous(pt1)
+    pt2 = homogeneous(pt2)
+    # normalize points
+    if K.any():
+        pt1_n = normalizeK(pt1, K)
+        pt2_n = normalizeK(pt2, K)
 
     # best values
     bestInlierCount = 0
@@ -13,45 +17,41 @@ def ransac(pt1, pt2, K, threshold):
     bestErr = np.inf
     bestE = []
 
-    desiredConfidence = 0.99
     nSamples = 5
 
-    # initial iteration count (enything greater than 1 would work)
-    m, t = 3, 1
+    # initial iteration count
+    m, t = 10000, 1
     while t < m:
         # choose 5 random points
         random_index = np.random.choice(len(pt1), nSamples)
         # normalize feature coordinates
-        fa_n = np.linalg.lstsq(K, pt1[random_index].T)[0]
-        fb_n = np.linalg.lstsq(K, pt2[random_index].T)[0]
+        q1 = pt1_n[random_index].T
+        q2 = pt2_n[random_index].T
         
-        # calc the probable essential matrix
-        Evector = octave.calibrated_fivepoint(fa_n, fb_n)
-        E = Evector.reshape(3, 3, -1) if len(Evector) else []
-        # now E is a 3x3xN matrix containing N essential matrices
-        for ec in range(E.shape[2]):
-            # calc fundamental matrix
-            F = np.linalg.lstsq(K.T, (np.linalg.inv(K).T @ E[:,:,ec]).T)[0].T
-
-            # calc sampson distances    
-            d = np.array([distSampson(pt1[j], F,  pt2[j]) for j in range(len(pt1))]).squeeze()
+        # calculate essential matrix for randomly chosen 5-pt
+        Evec = octave.calibrated_fivepoint(q1, q2)
+        E = np.transpose(Evec.reshape(3, 3, -1), (2,0,1)) if len(Evec) else np.array([])
+        for e in E:
+            # calculate fundamental matrix for E
+            F = EtoF(e, K)
+            # calculate sampson distances for all match points
+            d = np.array([distSampson(pt1[j], F, pt2[j]) for j in range(len(pt1))]).squeeze()
 
             # find inlier indxes
             inlier_indexes = np.nonzero(d < threshold)[0]
-            # compute the sum error of inliers and outliers for this F matrix
             inlierCount = len(inlier_indexes)
             total_count = len(pt1)
             Err = (sum(d[inlier_indexes]) + (total_count - inlierCount)*threshold) / total_count
 
-            # update the best values if needed
+            # update the best values
             if ( inlierCount > bestInlierCount or (inlierCount == bestInlierCount and Err < bestErr ) ):
                 bestInlierCount = inlierCount
                 bestErr = Err
                 bestInliers = inlier_indexes
-                bestE = E[:,:,ec]
+                bestE = e
 
                 # update max iteration count
-                inlierRatio = inlierCount / len(pt1)
+                inlierRatio = inlierCount / total_count
                 m = nTrials(inlierRatio, nSamples, desiredConfidence)
         t = t+1
 
