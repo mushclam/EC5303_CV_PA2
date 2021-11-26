@@ -82,36 +82,41 @@ if __name__=='__main__':
     img0_pt = np.int32([kp[0][m.queryIdx].pt for m in good_matches])
     img1_pt = np.int32([kp[1][m.trainIdx].pt for m in good_matches])
 
-    # opencv code
-    # # F, mask = cv2.findEssentialMat(img0_pt, img1_pt, cameraMatrix=K, method=cv2.RANSAC, prob=0.9999, threshold=0.8)
-    # mask = mask.ravel()
-    # in1 = img0_pt[mask==1]
-    # in2 = img1_pt[mask==1]
-    # out1 = img0_pt[mask==0]
-    # out2 = img1_pt[mask==0]
-
     E, in1, in2, out1, out2 = ransac(img0_pt, img1_pt, K,
                                      args.threshold, args.confidence)  
 
     # Essential Matrix Decomposition
-    # opencv code
-    # cv_r1, cv_r2, cv_t = cv2.decomposeEssentialMat(F)
     r1, r2, t = decomposeEssentialMat(E)
     P1 = K @ RT(np.identity(3), np.zeros((3,)))
 
-    # 
+    # normalize inliers
+    in1, in2 = [normalizeK(pt, K) for pt in [in1, in2]]
+    # Get candidate Extrinsic
     e_set = [(r1, t), (r2, t), (r1, -t), (r2, -t)]
     Ps = [K @ RT(rot, trans) for rot, trans in e_set]
+    # Get camera center
+    cs = [get_center(rot, trans) for rot, trans in e_set]
+    # Get 3D point by triangulation
     rs = [triangulation(P1, P2, in1, in2) for P2 in Ps]
-    rs = [r/r[:,3,np.newaxis] for r in rs]
-    best_ind = np.argmax(np.sum([r[:,2]>=0 for r in rs], axis=1))
-    r = rs[best_ind]
-    r[np.where(r[:,2]<0)] = -r[np.where(r[:,2]<0)]
+    rs = [r[:,:-1]/r[:,3,np.newaxis] for r in rs]
+    # Get best index for camera matrix
+    best_ind = np.argmax(np.sum([(r-c)@e[0][2].T >= 0 for r, c, e in zip(rs, cs, e_set)], axis=1))
+    best_P = Ps[best_ind]
+    best_c = cs[best_ind]
+    best_r = rs[best_ind]
+    # best_r[np.where(best_r[:,2]<0)] = -best_r[np.where(best_r[:,2]<0)]
+
+    # 3D point reprojection
+    # r_pt = (best_P @ homogeneous(best_r).T).T
+    # r_pt = r_pt[:,:-1]/r_pt[:,2,np.newaxis]
+    # r_pt = r_pt - np.min(r_pt, axis=0)
+    # r_pt = r_pt / np.max(r_pt, axis=0)
+    # r_pt = np.array([img[0].shape[0], img[0].shape[1]]) * r_pt
 
     # Add color to 3D points
     img = [cv2.cvtColor(i, cv2.COLOR_BGR2RGB) for i in img]
     color = img[0][in1[:,1].astype(np.int64),in1[:,0].astype(np.int64)]
-    r = np.concatenate([r, color], axis=1)
+    best_r = np.concatenate([best_r, color], axis=1)
 
     # Save PLY file
-    octave.SavePLY('calculated_structure.ply', r.T)
+    # octave.SavePLY(args.output_file, best_r.T)

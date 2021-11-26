@@ -12,16 +12,16 @@ def ransac(pt1, pt2, K=None, threshold=1.0, desiredConfidence=0.9999):
         pt2_n = normalizeK(pt2, K)
 
     # best values
-    bestInlierCount = 0
-    bestInliers = []
-    bestErr = np.inf
-    bestE = []
+    best_inlier_count = 0
+    best_inliers = []
+    best_err = np.inf
+    best_E = []
 
     nSamples = 5
 
     # initial iteration count
-    m, t = 10000, 1
-    while t < m:
+    max_iter, trials = 10000, 1
+    while trials < max_iter:
         # choose 5 random points
         random_index = np.random.choice(len(pt1), nSamples)
         # normalize feature coordinates
@@ -39,29 +39,29 @@ def ransac(pt1, pt2, K=None, threshold=1.0, desiredConfidence=0.9999):
 
             # find inlier indxes
             inlier_indexes = np.nonzero(d < threshold)[0]
-            inlierCount = len(inlier_indexes)
+            inlier_count = len(inlier_indexes)
             total_count = len(pt1)
-            Err = (sum(d[inlier_indexes]) + (total_count - inlierCount)*threshold) / total_count
+            Err = (sum(d[inlier_indexes]) + (total_count - inlier_count)*threshold) / total_count
 
             # update the best values
-            if ( inlierCount > bestInlierCount or (inlierCount == bestInlierCount and Err < bestErr ) ):
-                bestInlierCount = inlierCount
-                bestErr = Err
-                bestInliers = inlier_indexes
-                bestE = e
+            if ( inlier_count > best_inlier_count or (inlier_count == best_inlier_count and Err < best_err ) ):
+                best_inlier_count = inlier_count
+                best_err = Err
+                best_inliers = inlier_indexes
+                best_E = e
 
                 # update max iteration count
-                inlierRatio = inlierCount / total_count
-                m = nTrials(inlierRatio, nSamples, desiredConfidence)
-        t = t+1
+                inlier_ratio = inlier_count / total_count
+                max_iter = nTrials(inlier_ratio, nSamples, desiredConfidence)
+        trials = trials+1
 
     # final inlier points
-    in1 = pt1[bestInliers]
-    in2 = pt2[bestInliers]
+    in1 = pt1[best_inliers]
+    in2 = pt2[best_inliers]
     # final outlier points
-    out1 = pt1[np.setdiff1d(range(len(pt1)), bestInliers)]
-    out2 = pt2[np.setdiff1d(range(len(pt2)), bestInliers)]
+    out1 = pt1[np.setdiff1d(range(len(pt1)), best_inliers)]
+    out2 = pt2[np.setdiff1d(range(len(pt2)), best_inliers)]
     # final Essential Matrix
-    E = bestE
+    E = best_E
 
     return E, in1, in2, out1, out2

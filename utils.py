@@ -76,3 +76,6 @@ def EtoF(E, K):
 
 def RT(R, T):
     return np.concatenate([R, T[:, np.newaxis]], axis=1)
+
+def get_center(R, T):
+    return -R.T@T
